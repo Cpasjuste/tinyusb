@@ -2,6 +2,23 @@
 # Common make definition for all examples
 # ---------------------------------------
 
+#-------------------------------------------------------------
+# Toolchain
+# Can be changed via TOOLCHAIN=gcc|iar or CC=arm-none-eabi-gcc|iccarm|clang
+#-------------------------------------------------------------
+ifneq (,$(findstring clang,$(CC)))
+  TOOLCHAIN = clang
+else ifneq (,$(findstring iccarm,$(CC)))
+  TOOLCHAIN = iar
+else ifneq (,$(findstring gcc,$(CC)))
+  TOOLCHAIN = gcc
+endif
+
+# Default to GCC
+ifndef TOOLCHAIN
+  TOOLCHAIN = gcc
+endif
+
 #-------------- TOP and CURRENT_PATH ------------
 
 # Set TOP to be the path to get from the current directory (where make was invoked) to the top of the tree.
@@ -15,6 +32,8 @@ TOP = $(abspath $(subst make.mk,../../..,$(THIS_MAKEFILE)))
 # Set CURRENT_PATH to the relative path from TOP to the current directory, ie examples/device/cdc_msc_freertos
 CURRENT_PATH = $(subst $(TOP)/,,$(abspath .))
 
+#-------------- Linux/Windows ------------
+
 # Detect whether shell style is windows or not
 # https://stackoverflow.com/questions/714100/os-detecting-makefile/52062069#52062069
 ifeq '$(findstring ;,$(PATH))' ';'
@@ -26,13 +45,18 @@ CMDEXE := 1
 SHELL := cmd.exe
 endif
 
-# Handy check parameter function
-check_defined = \
-    $(strip $(foreach 1,$1, \
-    $(call __check_defined,$1,$(strip $(value 2)))))
-__check_defined = \
-    $(if $(value $1),, \
-    $(error Undefined make flag: $1$(if $2, ($2))))
+ifeq ($(CMDEXE),1)
+  CP = copy
+  RM = del
+  MKDIR = mkdir
+  PYTHON = python
+else
+  CP = cp
+  RM = rm
+  MKDIR = mkdir
+  PYTHON = python3
+endif
+
 
 # Build directory
 BUILD := _build/$(BOARD)
@@ -40,12 +64,14 @@ BUILD := _build/$(BOARD)
 PROJECT := $(notdir $(CURDIR))
 BIN := $(TOP)/_bin/$(BOARD)/$(notdir $(CURDIR))
 
-#-------------- Select the board to build for. ------------
+#-------------------------------------------------------------
+# Board / Family
+#-------------------------------------------------------------
 
 # Board without family
 ifneq ($(wildcard $(TOP)/hw/bsp/$(BOARD)/board.mk),)
-BOARD_PATH := hw/bsp/$(BOARD)
-FAMILY :=
+  BOARD_PATH := hw/bsp/$(BOARD)
+  FAMILY :=
 endif
 
 # Board within family
@@ -68,32 +94,9 @@ else
   SRC_C += $(subst $(TOP)/,,$(wildcard $(TOP)/$(FAMILY_PATH)/*.c))
 endif
 
-#-------------- Toolchain  ------------
-
-# Supported toolchain: gcc, iar
-TOOLCHAIN ?= gcc
-
-# Can be set by board, default to ARM GCC
-CROSS_COMPILE ?= arm-none-eabi-
-
-ifeq ($(TOOLCHAIN),iar)
-CC := iccarm
-USE_IAR = 1
-endif
-
-ifeq ($(CMDEXE),1)
-  CP = copy
-  RM = del
-  MKDIR = mkdir
-  PYTHON = python
-else
-  CP = cp
-  RM = rm
-  MKDIR = mkdir
-  PYTHON = python3
-endif
-
-#-------------- Source files and compiler flags --------------
+#-------------------------------------------------------------
+# Source files and compiler flags
+#-------------------------------------------------------------
 # tinyusb makefile
 include $(TOP)/src/tinyusb.mk
 SRC_C += $(TINYUSB_SRC_C)
@@ -109,10 +112,15 @@ INC += \
 BOARD_UPPER = $(subst a,A,$(subst b,B,$(subst c,C,$(subst d,D,$(subst e,E,$(subst f,F,$(subst g,G,$(subst h,H,$(subst i,I,$(subst j,J,$(subst k,K,$(subst l,L,$(subst m,M,$(subst n,N,$(subst o,O,$(subst p,P,$(subst q,Q,$(subst r,R,$(subst s,S,$(subst t,T,$(subst u,U,$(subst v,V,$(subst w,W,$(subst x,X,$(subst y,Y,$(subst z,Z,$(subst -,_,$(BOARD))))))))))))))))))))))))))))
 CFLAGS += -DBOARD_$(BOARD_UPPER)
 
+ifdef CFLAGS_CLI
+	CFLAGS += $(CFLAGS_CLI)
+endif
+
 # use max3421 as host controller
 ifeq (${MAX3421_HOST},1)
   SRC_C += src/portable/analog/max3421/hcd_max3421.c
   CFLAGS += -DCFG_TUH_MAX3421=1
+  CMAKE_DEFSYM +=	-DMAX3421_HOST=1
 endif
 
 # Log level is mapped to TUSB DEBUG option
@@ -123,7 +131,7 @@ endif
 
 # Logger: default is uart, can be set to rtt or swo
 ifneq ($(LOGGER),)
-	CMAKE_DEFSYM +=	-DLOGGER=$(LOGGER)
+  CMAKE_DEFSYM +=	-DLOGGER=$(LOGGER)
 endif
 
 ifeq ($(LOGGER),rtt)
@@ -142,3 +150,41 @@ endif
 
 # toolchain specific
 include ${TOP}/examples/build_system/make/toolchain/arm_$(TOOLCHAIN).mk
+
+#---------------------- FreeRTOS -----------------------
+FREERTOS_SRC = lib/FreeRTOS-Kernel
+FREERTOS_PORTABLE_PATH = $(FREERTOS_SRC)/portable/$(if $(findstring iar,$(TOOLCHAIN)),IAR,GCC)
+
+ifeq ($(RTOS),freertos)
+	SRC_C += \
+		$(FREERTOS_SRC)/list.c \
+		$(FREERTOS_SRC)/queue.c \
+		$(FREERTOS_SRC)/tasks.c \
+		$(FREERTOS_SRC)/timers.c \
+		$(subst $(TOP)/,,$(wildcard $(TOP)/$(FREERTOS_PORTABLE_SRC)/*.c))
+
+	SRC_S += $(subst $(TOP)/,,$(wildcard $(TOP)/$(FREERTOS_PORTABLE_SRC)/*.s))
+	INC += \
+		$(TOP)/hw/bsp/$(FAMILY)/FreeRTOSConfig \
+		$(TOP)/$(FREERTOS_SRC)/include \
+		$(TOP)/$(FREERTOS_PORTABLE_SRC)
+
+	CFLAGS += -DCFG_TUSB_OS=OPT_OS_FREERTOS
+
+	# Suppress FreeRTOSConfig.h warnings
+	CFLAGS_GCC += -Wno-error=redundant-decls
+
+	# Suppress FreeRTOS source warnings
+	CFLAGS_GCC += -Wno-error=cast-qual
+
+	# FreeRTOS (lto + Os) linker issue
+	LDFLAGS_GCC += -Wl,--undefined=vTaskSwitchContext
+endif
+
+#---------------- Helper ----------------
+check_defined = \
+    $(strip $(foreach 1,$1, \
+    $(call __check_defined,$1,$(strip $(value 2)))))
+__check_defined = \
+    $(if $(value $1),, \
+    $(error Undefined make flag: $1$(if $2, ($2))))

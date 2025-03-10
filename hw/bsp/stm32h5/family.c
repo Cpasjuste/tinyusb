@@ -25,6 +25,9 @@
  * This file is part of the TinyUSB stack.
  */
 
+/* metadata:
+   manufacturer: STMicroelectronics
+*/
 
 // Suppress warning caused by mcu driver
 #ifdef __GNUC__
@@ -55,7 +58,9 @@ void USB_DRD_FS_IRQHandler(void) {
 //--------------------------------------------------------------------+
 // MACRO TYPEDEF CONSTANT ENUM
 //--------------------------------------------------------------------+
+#ifdef UART_DEV
 UART_HandleTypeDef UartHandle;
+#endif
 
 void board_init(void) {
   HAL_Init(); // required for HAL_RCC_Osc TODO check with freeRTOS
@@ -67,15 +72,17 @@ void board_init(void) {
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
+
+  #ifdef __HAL_RCC_GPIOE_CLK_ENABLE
+  __HAL_RCC_GPIOE_CLK_ENABLE();
+  #endif
+  #ifdef __HAL_RCC_GPIOG_CLK_ENABLE
+  __HAL_RCC_GPIOG_CLK_ENABLE();
+  #endif
+  #ifdef __HAL_RCC_GPIOI_CLK_ENABLE
   __HAL_RCC_GPIOI_CLK_ENABLE();
-
-  //__HAL_RCC_SYSCFG_CLK_ENABLE();
-  //__HAL_RCC_PWR_CLK_ENABLE();
-
-      UART_CLK_EN();
+  #endif
 
   #if CFG_TUSB_OS == OPT_OS_NONE
   // 1ms tick timer
@@ -107,6 +114,8 @@ void board_init(void) {
   HAL_GPIO_Init(BUTTON_PORT, &GPIO_InitStruct);
 
   #ifdef UART_DEV
+  UART_CLK_EN();
+
   // UART
   GPIO_InitStruct.Pin = UART_TX_PIN | UART_RX_PIN;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -141,7 +150,9 @@ void board_init(void) {
   __HAL_RCC_USB_CLK_ENABLE();
 
   /* Enable VDDUSB */
+  #if defined (PWR_USBSCR_USB33DEN)
   HAL_PWREx_EnableVddUSB();
+  #endif
 }
 
 //--------------------------------------------------------------------+
@@ -183,7 +194,6 @@ int board_uart_write(void const* buf, int len) {
   #else
   (void) buf;
   (void) len;
-  (void) UartHandle;
   return 0;
   #endif
 }
