@@ -475,7 +475,7 @@ bool hidh_open(uint8_t rhport, uint8_t daddr, tusb_desc_interface_t const* desc_
   (void) rhport;
   (void) max_len;
 
-  TU_VERIFY(TUSB_CLASS_HID == desc_itf->bInterfaceClass);
+  //TU_VERIFY(TUSB_CLASS_HID == desc_itf->bInterfaceClass);
   TU_LOG_DRV("[%u] HID opening Interface %u\r\n", daddr, desc_itf->bInterfaceNumber);
 
   // len = interface + hid + n*endpoints
