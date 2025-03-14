@@ -1514,6 +1514,26 @@ static void process_enumeration(tuh_xfer_t* xfer) {
       break;
     }
 
+#ifdef __UGAMEPAD__ // Skip a few strings, fix some device descriptors (NeoGeo mini gamepad...)
+    case ENUM_GET_STRING_LANGUAGE_ID: {
+      // save the received device descriptor
+      TU_ASSERT(dev,);
+      tusb_desc_device_t const* desc_device = (tusb_desc_device_t const*) _usbh_epbuf.ctrl;
+      dev->vid = desc_device->idVendor;
+      dev->pid = desc_device->idProduct;
+      dev->i_manufacturer = desc_device->iManufacturer;
+      dev->i_product = desc_device->iProduct;
+      dev->i_serial = desc_device->iSerialNumber;
+
+      if (dev->i_serial != 0) {
+        tuh_descriptor_get_string(daddr, dev->i_serial, langid, _usbh_epbuf.ctrl, CFG_TUH_ENUMERATION_BUFSIZE,
+                            process_enumeration, ENUM_GET_9BYTE_CONFIG_DESC);
+        break;
+      } else {
+        TU_ATTR_FALLTHROUGH;
+      }
+    }
+#else
     case ENUM_GET_STRING_LANGUAGE_ID: {
       // save the received device descriptor
       TU_ASSERT(dev,);
@@ -1571,6 +1591,7 @@ static void process_enumeration(tuh_xfer_t* xfer) {
         TU_ATTR_FALLTHROUGH;
       }
     }
+#endif
 
     case ENUM_GET_9BYTE_CONFIG_DESC: {
       // Get 9-byte for total length
